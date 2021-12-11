@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  docker:
+    name: Docker Container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Build and Push
+        uses: docker/build-push-action@v2
+        with:
+          context: ./
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.run_id }}
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: docker
+    container:
+      image: ghcr.io/${{ github.repository }}:${{ github.run_id }}
+      options: '-u root'
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Compile
+        env:
+          ACCOUNT_SID: ${{ secrets.ACCOUNT_SID }}
+          AUTH_TOKEN: ${{ secrets.AUTH_TOKEN }}
+        run: |
+          mkdir build && cd build && cmake .. && make && ctest
+  clang-format:
+    name: Clang Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Style Check
+        run: |
+          find -iname *.h -o -iname *.cpp | xargs clang-format --dry-run --Werror --style=Google
